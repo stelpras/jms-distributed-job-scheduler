@@ -1,9 +1,10 @@
-STYLIANOS PRASIANAKIS 1115201700233
-SYSTEMS PROGRAMMING SPRING 2025-2026
+SYSTEMS PROGRAMMING
 
-jms - Job Management System (hw2 K24)
+STYLIANOS PRASIANAKIS 
 
-FILES
+# jms - Job Management System (hw2 K24)
+
+## FILES
   protocol.c / protocol.h     communication + parsing helpers
   job.c / job.h               job object (deep-copies argv)
   job_queue.c / job_queue.h   producer/consumer queue (mutex + cond)
@@ -14,23 +15,31 @@ FILES
   jms_console.c               client: connect, send commands, print
   Makefile                    separate compilation, links with -pthread
 
-COMPILATION
-  make
+## COMPILATION
+```
+make
+```
 
-CLEAN
-  make clean
+## CLEAN
+```
+make clean
+```
 
-EXECUTION
+## EXECUTION
   Coord terminal:
-  ./jms_coord -p <port> -l <path> -n <workers>
+```
+./jms_coord -p <port> -l <path> -n <workers>
+```
   Console terminal:
-  ./jms_console -h <host> -p <port> [-o <operations_file>]
+```
+./jms_console -h <host> -p <port> [-o <operations_file>]
+```
 
   The console sends the commands in the operations file (if -o is given),
   then reads further commands from standard input. If -o is omitted it
   reads from standard input from the start.
 
-PROTOCOL
+## PROTOCOL
   Text-based over TCP. Each line ends with '\n', which marks the
   message boundary (TCP does not preserve boundaries).
 
@@ -46,7 +55,7 @@ PROTOCOL
   disconnect is detected when read() returns 0; the console likewise
   exits when the coord closes the socket (e.g. after shutdown).
 
-THREADING MODEL
+## THREADING MODEL
   The coord creates N worker threads once at startup (the -n value)
   and reuses them for all jobs. The main thread runs the accept loop;
   each connected client is served by its own detached handler thread,
@@ -69,7 +78,7 @@ THREADING MODEL
   lock -> while(!condition) cond_wait -> unlock + signal/broadcast.
   No busy-waiting.
 
-STARTUP
+## STARTUP
   The port given with -p is read into an int and passed to htons() when
   filling sockaddr_in; the coord bind()s and listen()s on it, while the
   console connect()s to the same port (so both must use the same value).
@@ -80,7 +89,7 @@ STARTUP
   (from previous runs), so old output does not interfere with the
   current run.
 
-COMMANDS
+## COMMANDS
   submit <job>     enqueue a job; returns its JobID immediately
                    (does not block until the job finishes)
   status <id>      one job's state: Active (running for N seconds,
@@ -98,7 +107,7 @@ COMMANDS
 
   No shell parsing: pipes, redirection and quotes are not supported.
 
-JOB EXECUTION
+## JOB EXECUTION
   A worker pops a job, calls fork(), and the child creates its output
   directory, redirects stdout/stderr into files inside it, and
   execvp()s the command. The worker waitpid()s the child, so no
@@ -117,7 +126,7 @@ JOB EXECUTION
     stdout_<jobid>   the job's standard output
     stderr_<jobid>   the job's standard error
 
-SHUTDOWN
+## SHUTDOWN
   On "shutdown" the coord stops accepting new connections (a self-pipe
   wakes the select-based accept loop), sets the queue's shutting_down
   flag and broadcasts so every worker wakes. Idle workers exit at once;
@@ -137,20 +146,52 @@ SHUTDOWN
   declared volatile sig_atomic_t because it is written by one thread
   and read by another.
 
-TEST
+## MANUAL TEST
   Start the coord, then connect a console and type commands (one per
   line), or pass them in a file with -o. Example:
-    Terminal 1:  ./jms_coord -p 9000 -l ./out -n 4
-    Terminal 2:  ./jms_console -h localhost -p 9000
-                 submit sleep 20
-                 submit sleep 20
-                 ... (more jobs than workers)
-                 show-active
-                 show-workers
-                 status 1
-                 shutdown
+```
+Terminal 1:  ./jms_coord -p 9000 -l ./out -n 4
+Terminal 2:  ./jms_console -h localhost -p 9000
+             submit sleep 20
+             submit sleep 20
+             ... (more jobs than workers)
+             show-active
+             show-workers
+             status 1
+             shutdown
+```
   With more jobs than workers, exactly N run at once (Active) and the
   rest are Queued; after they finish, show-finished lists them all and
   output files appear under ./out/outputs_<...>/. "shutdown" prints
   "Served X jobs, Y were running, Z were still queued" and the coord
   exits.
+
+## AUTOMATED TEST
+  test_jms.sh provides a smoke test that starts the coordinator in the
+  background, connects a console, submits several jobs (a mix of quick
+  commands and longer sleeps to exercise queueing), verifies that output
+  directories and files are created, checks status and worker information,
+  then gracefully shuts down the system.
+
+  Running it:
+```
+chmod +x test_jms.sh
+./test_jms.sh
+```
+
+  The script uses time bounds (30-second coordinator timeout, 15-second
+  console timeouts) to prevent hanging. It performs 8 checks:
+    - Coordinator builds successfully
+    - Coordinator starts and binds to the port
+    - Console can connect and submit jobs
+    - Coordinator handles job execution and queuing
+    - Status commands return job information
+    - Output directories with stdout/stderr files are created
+    - Shutdown command works and coordinator exits cleanly
+    - Valgrind reports no memory errors (if available)
+
+  After the test completes, the script cleans up all processes, temporary
+  directories, and log files. Note: this is a smoke test, not a stress
+  test. For full validation, run the coordinator manually, submit many
+  jobs (more than the number of workers), and verify that exactly N jobs
+  run concurrently while the rest wait in the queue.
